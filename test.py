@@ -1,7 +1,7 @@
 import tensorflow as tf
 import os
 import sys
-sys.path.insert(0, '/home/ad/PycharmProjects/Sound_processing/venv/include/')
+sys.path.insert(0, '/home/ad/PycharmProjects/Sound_processing/venv/pull_data/')
 from parameter import *
 
 tf.compat.v1.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
