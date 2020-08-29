@@ -11,7 +11,7 @@ def get_params(argv='1'):
         quick_test=True,  # To do quick test. Trains/test on small subset of dataset, and # of epochs
 
         # INPUT PATH
-        dataset_dir='/home/ad/Downloads/Research/SELD/dcase2020-seld-master/',
+        dataset_dir='/home/ad/PycharmProjects/Sound_processing/venv/pull_data',
         # Base folder containing the foa/mic and metadata folders
 
         # OUTPUT PATH
