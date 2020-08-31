@@ -170,11 +170,13 @@ def evaluate(gen=None, params=None):
     score_sed = np.zeros(np.append([len(gen._data_index) * N], gen.get_out_shape_sed()))
     score_doa = np.zeros(np.append([len(gen._data_index) * N], gen.get_out_shape_doa()))
 
-    test_batch_size = params['batch_size'] // 8
+    test_batch_size = params['batch_size'] // 8 #8
     num_batch_per_epoch = np.floor(gen._data_size / test_batch_size).astype(np.uint32)
     test_step = 0
     while test_step < num_batch_per_epoch:
         x_mel, y_sed, y_doa = gen.next_batch_whole(test_batch_size)
+        y_sed = tf.constant(y_sed, dtype=tf.float32)
+        y_doa = tf.constant(y_doa, dtype=tf.float32)
         ret = eval_step(params, x_mel, y_sed, y_doa)
         score_sed[test_step * test_batch_size * N: (test_step + 1) * test_batch_size * N] = ret['score_sed']
         score_doa[test_step * test_batch_size * N: (test_step + 1) * test_batch_size * N] = ret['score_doa']
@@ -185,6 +187,8 @@ def evaluate(gen=None, params=None):
         test_step += 1
     if (gen._pointer < len(gen._data_index)):
         _, x_mel, y_sed, y_doa = gen.rest_batch_whole()
+        y_sed = tf.constant(y_sed, dtype=tf.float32)
+        y_doa = tf.constant(y_doa, dtype=tf.float32)
         ret = eval_step(params, x_mel, y_sed, y_doa)
         score_sed[test_step * test_batch_size * N: gen._data_size * N] = ret['score_sed']
         score_doa[test_step * test_batch_size * N: gen._data_size * N] = ret['score_doa']
@@ -339,4 +343,28 @@ model = SELDnet(params=params, is_training=True, out_shape_sed=(120,14),
 ckpt = tf.train.Checkpoint(step = tf.Variable(0), net=model)
 manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=1)
 #model.save_weight('/home/ad/PycharmProjects/Sound_processing/venv/pull_data/test/chpt')
-train_loop(params, scheduler)
+#train_loop(params, scheduler)
+
+x_mel, y_sed, y_doa = data_gen_test.next_batch_whole(params['batch_size'] // 8)
+y_sed = tf.constant(y_sed, dtype=tf.float32)
+y_doa = tf.constant(y_doa, dtype=tf.float32)
+print(x_mel.shape)
+print(y_doa.shape)
+print(y_sed.shape)
+
+gen = data_gen_valid
+N = gen._gen_list[0]._data_size
+score_sed = np.zeros(np.append([len(gen._data_index) * N], gen.get_out_shape_sed()))
+score_doa = np.zeros(np.append([len(gen._data_index) * N], gen.get_out_shape_doa()))
+
+test_batch_size = params['batch_size'] // 8 #8
+num_batch_per_epoch = np.floor(gen._data_size / test_batch_size).astype(np.uint32)
+test_step = 0
+print(num_batch_per_epoch)
+while test_step <= num_batch_per_epoch:
+    x_mel, y_sed, y_doa = gen.next_batch_whole(test_batch_size)
+    y_sed = tf.constant(y_sed, dtype=tf.float32)
+    y_doa = tf.constant(y_doa, dtype=tf.float32)
+    ret = eval_step(params, x_mel, y_sed, y_doa)
+print(ret)
+
