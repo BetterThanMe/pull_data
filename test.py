@@ -1,3 +1,5 @@
+import shutil
+
 import librosa
 import tensorflow as tf
 import os
@@ -249,7 +251,6 @@ def train_step(params, step, x_mel, y_sed, y_doa, LR):
 
 def train_loop(params, scheduler):
     start_time = time.time()
-    checkpoint = tf.train.Checkpoint(model)
     train_batches_per_epoch = np.floor(data_gen_train._data_size / params['batch_size']).astype(np.uint32)
     current_step = 0
     for epoch in range(scheduler['training_epoch']):
@@ -305,7 +306,7 @@ def train_loop(params, scheduler):
                     dest_file = os.path.join(checkpoint_path, 'best_model_seld')
                     shutil.copy(source_file + '.data-00000-of-00001', dest_file + '.data-00000-of-00001')
                     shutil.copy(source_file + '.index', dest_file + '.index')
-                    shutil.copy(checkpoint_path+'/checkpoint', dest_file + '/checkpoint_'+str(current_step))
+                    shutil.copy(checkpoint_path+'/checkpoint', checkpoint_path + '/checkpoint_'+str(current_step))
 
                     log_file("current_best_valid.txt", valid_loss_sed, valid_loss_doa, valid_loss_total,
                              valid_new_metric, valid_new_seld_metric)
@@ -321,12 +322,12 @@ def train_loop(params, scheduler):
                         text_file.write("{:g}\n".format((end_time - start_time)))
                     quit()
 
-            data_gen_train.reset_pointer()
-            data_gen_train.shuffle_data()
+        data_gen_train.reset_pointer()
+        data_gen_train.shuffle_data()
 
-        end_time = time.time()
-        with open(os.path.join(out_path, "training_time.txt"), "a") as text_file:
-            text_file.write("{:g}\n".format((end_time - start_time)))
+    end_time = time.time()
+    with open(os.path.join(out_path, "training_time.txt"), "a") as text_file:
+        text_file.write("{:g}\n".format((end_time - start_time)))
 
 
 
@@ -338,4 +339,4 @@ model = SELDnet(params=params, is_training=True, out_shape_sed=(120,14),
 ckpt = tf.train.Checkpoint(step = tf.Variable(0), net=model)
 manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=1)
 #model.save_weight('/home/ad/PycharmProjects/Sound_processing/venv/pull_data/test/chpt')
-#train_loop(params, scheduler)
+train_loop(params, scheduler)
