@@ -76,19 +76,408 @@ class Fc(tf.keras.layers.Layer):
         x = self.fc(inputs)
         return x
 
+class Max_pool(tf.keras.layers.Layer):
+    def __init__(self, filter_height, filter_width, stride_y, stride_x, name=None, padding='SAME'):
+        super(Max_pool, self).__init__(name=name)
+        self.filter_height = filter_height
+        self.filter_width = filter_width
+        self.stride_y = stride_y
+        self.stride_x = stride_x
+        self.padding = padding
+        self.max_pool2d = tf.keras.layers.MaxPool2D((filter_height, filter_width), strides=(stride_y, stride_x),
+                                                    padding= padding)
+    def call(self, inputs):
+        return self.max_pool2d(inputs)
+
+class Avr_pool(tf.keras.layers.Layer):
+    def __init__(self, filter_height, filter_width, stride_y, stride_x, name=None, padding='SAME'):
+        super(Avr_pool, self).__init__(name=name)
+        self.filter_height = filter_height
+        self.filter_width = filter_width
+        self.stride_y = stride_y
+        self.stride_x = stride_x
+        self.padding = padding
+        self.avr_pool = tf.keras.layers.AvgPool2D((filter_height, filter_width), (stride_y, stride_x), padding=padding)
+    def call(self, inputs):
+        return self.avr_pool(inputs)
+
+class Dropout(tf.keras.layers.Layer):
+    def __init__(self, rate, **kwargs):
+        super(Dropout, self).__init__(**kwargs)
+        self.rate = rate
+
+    def call(self, inputs, training):
+        if training:
+            return tf.nn.dropout(inputs, rate=self.rate)
+        return inputs
+
+class GRUs(tf.keras.layers.Layer):
+    def __init__(self, units, num_cells = 1, input_keep_prob=1.0, output_keep_prob=1.0, go_backwards =False,
+                 return_sequences = False, return_state = False, name = None, *args, **kwargs):
+        super(GRUs, self).__init__(name=name)
+        self.num_cells = num_cells
+        self.dim = units
+        self.input_drop = abs(1 -input_keep_prob)
+        self.output_drop = abs(1 -output_keep_prob)
+        self.go_backwards = go_backwards
+        self.return_sequences = return_sequences
+        self.return_state = return_state
+        self.states = None
+        def gruCell():
+            return tf.keras.layers.GRU(units, dropout= self.input_drop,
+                                       recurrent_dropout= self.output_drop, go_backwards= self.go_backwards,
+                                       return_state=True, return_sequences=True, stateful=True)
+        self._layers_name = ['GruCell_' +str(i) for i in range(num_cells)]
+        for name in self._layers_name:
+            self.__setattr__(name, gruCell())
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'num_cells': self.num_cells,
+            'input_drop': self.input_drop,
+            'output_drop': self.output_drop,
+            'go_backwards': self.go_backwards,
+            'return_sequences': self.return_sequences,
+            'return_state': self.return_state,
+            '_layers_name': self._layers_name,
+            'units': self.dim
+        })
+        return config
+
+    def call(self, inputs):
+        seq = inputs
+        state = None
+        for name in self._layers_name:
+            cell = self.__getattribute__(name)
+            (seq, state) = cell(seq, initial_state = state)
+        self.states = state
+        if self.return_state:
+            if self.return_sequences:
+                return [seq, state]
+            return [seq[:,-1,:], state]
+        if self.return_sequences:
+            return seq
+        return seq[:, -1, :]
+
+class Bidirectional(tf.keras.layers.Layer):
+    def __init__(self, nhidden, nlayer, input_keep_prob=1.0, output_keep_prob=1.0, return_state=False,
+                return_sequences = False, name = None, *args, **kwargs):
+        super(Bidirectional, self).__init__(name = name, *args, **kwargs)
+        self.num_hiddens = nhidden
+        self.num_cells = nlayer
+        self.input_drop = abs(1 - input_keep_prob)
+        self.output_drop = abs(1- output_keep_prob)
+        self.fw_cells = GRUs(nhidden, nlayer, input_keep_prob, output_keep_prob,
+                             go_backwards=False, return_sequences= return_sequences, return_state= return_state)
+        self.bw_cells = GRUs(nhidden, nlayer, input_keep_prob, output_keep_prob,
+                             go_backwards=True, return_sequences= return_sequences, return_state= return_state)
+        self.return_state = return_state
+        self.return_sequences = return_sequences
+
+    def build(self, input_shape):
+        self.biGrus = tf.keras.layers.Bidirectional(self.fw_cells, backward_layer=self.bw_cells, input_shape=input_shape)
+
+    def call(self, inputs):
+        out =  self.biGrus(inputs)
+        if self.return_state:
+            states = tf.keras.layers.concatenate((out[1], out[2]), axis=1)
+            return out[0], states
+        return out
+
+class SelfAttention(tf.keras.layers.Layer):
+    def __init__(self, attention_size, scaled_=True, masked_=False, name="self-attention", *args, **kwargs):
+        super(SelfAttention, self).__init__(name= name, *args, **kwargs)
+        self.attention_size = attention_size
+        self.scaled = scaled_
+        self.masked = masked_
+
+    def build(self, input_shape): #(batch_num, seq_len, ndim)
+        ndim = input_shape[2]
+        self.Q = tf.keras.layers.Dense(self.attention_size)
+        self.K = tf.keras.layers.Dense(self.attention_size)
+        self.V = tf.keras.layers.Dense(ndim)
+
+    def call(self, inputs):
+        q = self.Q(inputs)
+        k = self.K(inputs)
+        v = self.V(inputs)
+        self.attention = tf.matmul(q,k,transpose_b=True)
+        if self.scaled:
+            d_k = tf.cast(k.shape[-1], dtype = tf.float32)
+            self.attention = tf.divide(self.attention, tf.sqrt(d_k))
+        if self.masked:
+            raise  NotImplementedError
+        self.attention = tf.nn.softmax(self.attention, axis= -1)
+        return tf.matmul(self.attention, v)
+
 #3, 3, 64, 1, 1, is_training=self.istraining, padding='SAME', name='conv1'
 import os
 import numpy as np
-path = os.path.abspath('fold1_room1_mix001_ov1.npy')
-'''layer = Conv(3,3,64,1,1, padding='SAME', name= 'conv')
-x = np.load(path)
-x = tf.constant(x, shape=[10, 300, 64, 7])
 '''
-layer = Fc(num_outs= 10, name="fc", relu= True)
-x = tf.random.normal()
+x = tf.constant(x, shape=[10, 300, 448])
 
+x = tf.random.normal(shape=[32, 5, 10])
+layer = SelfAttention(64)
+print(layer(x).shape)
 with tf.GradientTape(persistent=True) as tape:
     loss = layer(x)
     grads = tape.gradient(loss, layer.trainable_variables)
-print([var.name for var in tape.watched_variables()])
-print(len(grads))
+for var in tape.watched_variables():
+    print(var.name)
+print(len(grads))'''
+
+class CRNN(tf.keras.layers.Layer):
+    def __init__(self, is_training, params, name, out_shape_sed, out_shape_doa, *args, **kwargs):
+        super(CRNN, self).__init__(name=name, *args, **kwargs)
+        self.is_training = is_training
+        self.params = params
+        self.out_shape_sed = out_shape_sed
+        self.out_shape_doa = out_shape_doa
+        # (-1, 300, 64, 7)
+        self.conv1 = Conv_bn_relu(filter_height= 3, filter_width= 3, num_filters= 64, stride_y= 1, stride_x= 1,
+                                  name='conv1', is_training= is_training, padding='SAME')
+
+        # (-1, 300, 64, 64)
+        self.conv2 = Conv_bn_relu(filter_height= 3, filter_width= 3, num_filters= 64, stride_y= 1, stride_x= 1,
+                                  name='conv2', is_training= is_training, padding='SAME')
+        # (-1, 300, 64, 64)
+        self.max_pool2 = Max_pool(filter_height= 5, filter_width=2, stride_y=5, stride_x= 2, name='max_pool2', padding='VALID')
+        # (-1, 60, 32, 64)
+        self.drop2 = Dropout(self.params['dropout_keep_prob_cnn'])
+
+        # (-1, 60, 32, 64)
+        self.conv3 = Conv_bn_relu(filter_height=3,filter_width= 3, num_filters= 128,stride_y= 1, stride_x= 1,
+                                  is_training=is_training, padding='SAME', name='conv3')
+        # (-1, 60, 32, 128)
+        self.max_pool3 = Max_pool(filter_height=1, filter_width= 2, stride_y=1, stride_x= 2, padding='VALID', name='max_pool3')
+        # (-1, 60, 16, 128)
+        self.drop3 = Dropout(self.params['dropout_keep_prob_cnn'])
+
+        # (-1, 60, 16, 128)
+        self.conv4 = Conv_bn_relu(filter_height=3, filter_width=3, num_filters=128, stride_y=1, stride_x=1,
+                                  is_training=is_training, padding='SAME', name='conv4')
+        # (-1, 60, 16, 128)
+        self.max_pool4 = Max_pool(filter_height=1, filter_width=2, stride_y=1, stride_x=2, padding='VALID', name='pool4')
+        # (-1, 60, 8, 128)
+        self.drop4 = Dropout(self.params['dropout_keep_prob_cnn'])
+
+        # (-1, 60, 8, 128)
+        self.conv5 = Conv_bn_relu(filter_height=3, filter_width=3, num_filters=256, stride_y=1, stride_x=1,
+                                  is_training=is_training, padding='SAME', name='conv5')
+        # (-1, 60, 8, 256)
+        self.max_pool5 = Max_pool(filter_height=1, filter_width=2, stride_y=1, stride_x=2, padding='VALID', name='pool5')
+        # (-1, 60, 4, 256)
+        self.drop5 = Dropout(self.params['dropout_keep_prob_cnn'])
+
+        # (-1, 60, 4, 256)
+        self.conv6 = Conv_bn_relu(filter_height=3, filter_width=3, num_filters=256, stride_y=1, stride_x=1,
+                                  is_training=is_training, padding='SAME', name='conv6')
+        # (-1, 60, 4, 256)
+        self.max_pool6 = Max_pool(filter_height=1, filter_width=2, stride_y=1, stride_x=2, padding='VALID',
+                                  name='pool6')
+        # (-1, 60, 2, 256)
+        self.drop6 = Dropout(self.params['dropout_keep_prob_cnn'])
+
+        self.bidirectional = Bidirectional(nhidden=params['rnn_hidden_size'], nlayer=params['rnn_nb_layer'],
+                                           input_keep_prob=1., output_keep_prob= self.params['dropout_keep_prob_rnn'],
+                                           return_sequences= True, name= 'bidrectional')
+        self.attention = SelfAttention(params['attention_size'])
+
+    def call(self, inputs):
+        x = inputs
+        x = self.conv1(x)
+        x = self.drop2(self.max_pool2(self.conv2(x)), training = self.is_training)
+        x = self.drop3(self.max_pool3(self.conv3(x)), training = self.is_training)
+        x = self.drop4(self.max_pool4(self.conv4(x)), training = self.is_training)
+        x = self.drop5(self.max_pool5(self.conv5(x)),training = self.is_training)
+        x = self.drop6(self.max_pool6(self.conv6(x)), training = self.is_training)
+        x = tf.reshape(x, shape=[-1, self.out_shape_sed[0], 2*256])
+        x = self.bidirectional(x)
+        x = self.attention(x)
+        return x
+
+class SED(tf.keras.layers.Layer):
+    def __init__(self, params, is_training, out_shape_sed, name = 'SED', *arg, **kwargs):
+        super(SED, self).__init__(name=name, *arg, **kwargs)
+        self.out_shape_sed = out_shape_sed
+        self.params = params
+        self.is_training = is_training
+        self.fc1 = Fc(params['dnn_size'], name='fc1')
+        self.drop1 = Dropout(params['dropout_keep_prob_dnn'], name='drop1')
+        self.fc2 = Fc(params['dnn_size'], name='fc2')
+        self.drop2 = Dropout(params['dropout_keep_prob_dnn'], name='drop2')
+        self.score = Fc(out_shape_sed[-1], name='score_sed')
+    def call(self, inputs):
+        x = inputs
+        x = self.drop1(self.fc1(x), training = self.is_training)
+        x = self.drop2(self.fc2(x), training = self.is_training)
+        x = self.score(x)
+        x = tf.sigmoid(x)
+        x = tf.reshape(x, [-1, self.out_shape_sed[0], self.out_shape_sed[1]])
+        return x
+
+class DOA(tf.keras.layers.Layer):
+    def __init__(self, params, out_shape_doa, name = 'DOA', is_training = None, *arg, **kwargs):
+        super(DOA, self).__init__(name=name, *arg, **kwargs)
+        self.out_shape_doa = out_shape_doa
+        self.is_training = is_training
+        self.params = params
+        self.fc1 = Fc(params['dnn_size'], name='fc1')
+        self.drop1 = Dropout(params['dropout_keep_prob_dnn'], name='drop1')
+        self.fc2 = Fc(params['dnn_size'], name='fc2')
+        self.drop2 = Dropout(params['dropout_keep_prob_dnn'], name='drop2')
+        self.score = Fc(out_shape_doa[-1], name='score_sed')
+    def call(self, inputs):
+        x = inputs
+        x = self.drop1(self.fc1(x), training = self.is_training)
+        x = self.drop2(self.fc2(x), training = self.is_training)
+        x = self.score(x)
+        x = tf.tanh(x)
+        x = tf.reshape(x, [-1, self.out_shape_doa[0], self.out_shape_doa[1]])
+        return x
+
+class Loss():
+    def __init__(self, pred_sed=None, gt_sed=None, pred_doa=None, gt_doa=None, sed_weight = 1., doa_weight = 1.,
+                 l2_loss=0., l2_reg_lambda=0.):
+        self.pred_sed = pred_sed
+        self.gt_sed = gt_sed
+        self.pred_doa = pred_doa
+        self.gt_doa = gt_doa
+        self.sed_weight = sed_weight
+        self.doa_weight = doa_weight
+        self.l2_loss = l2_loss
+        self.l2_reg_lambda = l2_reg_lambda
+
+    def sed_loss_regression(self, pred=None, gt=None):
+        if pred==None:
+            pred = self.pred_sed
+        if gt ==None:
+            gt = self.gt_sed
+        pred = tf.reshape(pred, shape=[-1, pred.shape[-1]])
+        gt = tf.reshape(gt, shape=[-1, gt.shape[-1]])
+        # instead of cross-entropy loss, we use mse loss (regression) here
+        sed_loss = tf.reduce_mean(tf.square(pred - gt))  # mean in all dimensions
+        return sed_loss
+
+    def sed_loss_classification(self, pred=None, gt=None):
+        if pred==None:
+            pred = self.pred_sed
+        if gt ==None:
+            gt = self.gt_sed
+        pred = tf.reshape(pred, shape=[-1, pred.shape[-1]])
+        gt = tf.reshape(gt, shape=[-1, gt.shape[-1]])
+        # instead of cross-entropy loss, we use mse loss (regression) here
+        sed_loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=gt, logits=pred)
+        sed_loss = tf.reduce_sum(sed_loss, axis=[1])
+        sed_loss = tf.reduce_mean(sed_loss)  # mean in all dimensions
+        return sed_loss
+
+    def doa_loss_regression(self, pred_sed=None, gt_sed=None, pred_doa=None, gt_doa=None, mask=None):
+        if pred_sed == None:
+            pred_sed = self.pred_sed
+        pred_sed = tf.reshape(pred_sed, shape=[-1, pred_sed.shape[-1]])
+        if gt_sed == None:
+            gt_sed = self.gt_sed
+        gt_sed = tf.reshape(gt_sed, shape=[-1, gt_sed.shape[-1]])
+        if pred_doa == None:
+            pred_doa = self.pred_doa
+        pred_doa = tf.reshape(pred_doa, shape=[-1, pred_doa.shape[-1]])
+        if gt_doa == None:
+            gt_doa = self.gt_doa
+        gt_doa = tf.reshape(gt_doa, shape=[-1, gt_doa.shape[-1]])
+        if mask==None:
+            mask = gt_sed
+            mask = tf.concat((mask, mask, mask), axis=-1)
+        doa_loss = tf.square(pred_doa - gt_doa)
+        doa_loss = tf.multiply(doa_loss, mask)  # mask here
+        doa_loss = tf.reduce_sum(doa_loss) / tf.reduce_sum(mask)  # mean in all dimensions
+        return doa_loss
+
+    def total_loss(self, pred_sed=None, gt_sed=None, pred_doa=None, gt_doa=None, sed_weight = None, doa_weight = None):
+        if pred_sed==None:
+            pred_sed = self.pred_sed
+        if gt_sed==None:
+            gt_sed = self.gt_sed
+        if pred_doa==None:
+            pred_doa = self.pred_doa
+        if gt_doa==None:
+            gt_doa = self.gt_doa
+        if sed_weight == None:
+            sed_loss_weight = self.sed_weight
+        if doa_weight == None:
+            doa_loss_weight = self.doa_weight
+
+        losses =  sed_loss_weight*self.sed_loss_regression(pred= pred_sed, gt= gt_sed) + \
+                  doa_loss_weight*self.doa_loss_regression(pred_doa= pred_doa, gt_doa= gt_doa, pred_sed=pred_sed, gt_sed=gt_sed)
+        return losses
+    def total_loss_l2(self, pred_sed=None, gt_sed=None, pred_doa=None, gt_doa=None, sed_weight = None,
+                      doa_weight = None, l2_loss = None, l2_reg_lambda=None):
+        if l2_loss == None:
+            l2_loss = self.l2_loss
+        if l2_reg_lambda == None:
+            l2_reg_lambda = self.l2_reg_lambda
+        return self.total_loss(pred_sed=pred_sed, gt_sed=gt_sed, pred_doa=pred_doa, gt_doa=gt_doa,
+                               sed_weight=sed_weight, doa_weight=doa_weight) + l2_loss*l2_reg_lambda
+
+    def __call__(self):
+        description = 'sed_loss_weight = '+str(self.sed_weight)+'\ndoa_loss_weight = '+str(self.doa_weight)
+        print(description)
+        if self.pred_doa is not None and self.gt_doa is not None and self.pred_sed is not None and self.gt_sed is not None:
+            return self.sed_loss_regression(), self.doa_loss_regression(), self.total_loss(), self.total_loss()
+        else:
+            return None
+
+class SELDnet(tf.keras.Model):
+    def __init__(self, params, is_training, out_shape_sed, out_shape_doa, name = None, *args, **kwargs):
+        super(SELDnet, self).__init__(name=name, *args, **kwargs)
+        self.params = params
+        self.is_training = is_training
+        self.out_shape_sed = out_shape_sed
+        self.out_shape_doa = out_shape_doa
+        self.sed_loss = None
+        self.doa_loss = None
+        self.total_loss = None
+        self.crnn = CRNN(is_training= is_training, params= params, name='crnn',
+                         out_shape_sed= out_shape_sed, out_shape_doa=out_shape_doa)
+        self.sed = SED(params=params, out_shape_sed=out_shape_sed, is_training = is_training)
+        self.doa = DOA(params=params, out_shape_doa=out_shape_doa, is_training = is_training)
+
+    def call(self, inputs):
+        x = inputs
+        x = self.crnn(x)
+        x = tf.reshape(x, [-1, 2*self.params['rnn_hidden_size']])
+        x_sed = self.sed(x)
+        x_doa = self.doa(x)
+        return x_sed, x_doa
+
+from parameter import *
+path = '/home/ad/PycharmProjects/Sound_processing/venv/pull_data/feat_label/foa_dev/fold1_room1_mix007_ov1.npy'
+path_label = '/home/ad/PycharmProjects/Sound_processing/venv/pull_data/feat_label/foa_dev_label/fold1_room1_mix007_ov1.npy'
+
+x = np.load(path)
+x = tf.reshape(x, (-1, 300, 64, 7))
+params = get_params()
+#layer = CRNN(is_training=True, params=params, name= 'crnn', out_shape_sed=(60, 14), out_shape_doa=(60, 42))
+layer = SELDnet(params=params, is_training=True, out_shape_sed=(60,14), out_shape_doa=(60,42))
+
+y = np.load(path_label)
+y_sed = tf.constant(y[:, :14], dtype=tf.float32)
+y_doa = tf.constant(y[:, 14:], dtype=tf.float32)
+print(y_sed.shape,' ', y_doa.shape)
+
+pred_sed, pred_doa = layer(x)
+l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in layer.trainable_variables])
+print(Loss(pred_sed=pred_sed, gt_sed=y_sed, pred_doa=pred_doa, gt_doa=y_doa, l2_loss=l2_loss, l2_reg_lambda=params['l2_reg_lambda'])())
+'''
+with tf.GradientTape(persistent=True) as tape:
+    pred_sed, pred_doa = layer(x)
+    loss = Loss(pred_sed=pred_sed, gt_sed=y_sed, pred_doa=pred_doa, gt_doa=y_doa).total_loss()
+grads = tape.gradient(loss, layer.trainable_variables)
+for var in tape.watched_variables():
+    print(var.name)
+total = 0
+for i in grads:
+    total += np.array(i.shape).reshape(-1)[0]
+print(total)
+'''
+
