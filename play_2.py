@@ -381,7 +381,10 @@ class Loss():
 
         doa_loss = tf.square(pred_doa - gt_doa)
         doa_loss = tf.multiply(doa_loss, mask)  # mask here
-        doa_loss = tf.reduce_sum(doa_loss) / tf.reduce_sum(mask)  # mean in all dimensions
+        if tf.reduce_sum(mask) !=0.:
+            doa_loss = tf.reduce_sum(doa_loss) / tf.reduce_sum(mask)  # mean in all dimensions
+        else:
+            doa_loss = tf.reduce_sum(doa_loss)
         return doa_loss
 
     def total_loss(self, pred_sed, gt_sed, pred_doa, gt_doa, sed_loss_weight=1., doa_loss_weight=1.):
@@ -437,7 +440,7 @@ class SELDnet(tf.keras.Model):
         x_doa = self.doa(x, training= self.is_training)
         return x_sed, x_doa
 
-from parameter import *
+'''from parameter import *
 path = '/home/ad/PycharmProjects/Sound_processing/venv/pull_data/feat_label/foa_dev/fold1_room1_mix007_ov1.npy'
 path_label = '/home/ad/PycharmProjects/Sound_processing/venv/pull_data/feat_label/foa_dev_label/fold1_room1_mix007_ov1.npy'
 
@@ -465,3 +468,4 @@ for var in tape.watched_variables():
     print(var.name)
 print(loss)
 
+'''
