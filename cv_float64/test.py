@@ -143,7 +143,7 @@ def learning_schedule(epoch):
 
 def eval_step(params, x_mel, y_sed, y_doa):
     if FLAGS.augment == 1:
-        x_mel = tf.constant(augment_spec(x_mel), dtype=tf.float32)
+        x_mel = tf.constant(augment_spec(x_mel), dtype=tf.float64)
 
     pred_sed, pred_doa = model(x_mel,training = False)
     l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in model.trainable_variables])
@@ -176,8 +176,8 @@ def evaluate(gen=None, params=None):
     test_step = 0
     while test_step < num_batch_per_epoch:
         x_mel, y_sed, y_doa = gen.next_batch_whole(test_batch_size)
-        y_sed = tf.constant(y_sed, dtype=tf.float32)
-        y_doa = tf.constant(y_doa, dtype=tf.float32)
+        y_sed = tf.constant(y_sed, dtype=tf.float64)
+        y_doa = tf.constant(y_doa, dtype=tf.float64)
         ret = eval_step(params, x_mel, y_sed, y_doa)
         score_sed[test_step * test_batch_size * N: (test_step + 1) * test_batch_size * N] = ret['score_sed']
         score_doa[test_step * test_batch_size * N: (test_step + 1) * test_batch_size * N] = ret['score_doa']
@@ -188,8 +188,8 @@ def evaluate(gen=None, params=None):
         test_step += 1
     if (gen._pointer < len(gen._data_index)):
         _, x_mel, y_sed, y_doa = gen.rest_batch_whole()
-        y_sed = tf.constant(y_sed, dtype=tf.float32)
-        y_doa = tf.constant(y_doa, dtype=tf.float32)
+        y_sed = tf.constant(y_sed, dtype=tf.float64)
+        y_doa = tf.constant(y_doa, dtype=tf.float64)
         ret = eval_step(params, x_mel, y_sed, y_doa)
         score_sed[test_step * test_batch_size * N: gen._data_size * N] = ret['score_sed']
         score_doa[test_step * test_batch_size * N: gen._data_size * N] = ret['score_doa']
@@ -235,7 +235,7 @@ def train_step(params, step, x_mel, y_sed, y_doa, LR):
     optimizer = tf.keras.optimizers.Adam(learning_rate=LR)
 
     if FLAGS.augment == 1:
-        x_mel = tf.constant(augment_spec(x_mel), dtype=tf.float32)
+        x_mel = tf.constant(augment_spec(x_mel), dtype=tf.float64)
 
     with tf.GradientTape(persistent=True) as tape:
         pred_sed, pred_doa = model(x_mel, training=True)
@@ -262,8 +262,8 @@ def train_loop(params, scheduler):
         step = 0
         while step<= train_batches_per_epoch:
             x_mel, y_sed, y_doa = data_gen_train.next_batch(params['batch_size'])
-            y_sed = tf.constant(y_sed, dtype=tf.float32)
-            y_doa = tf.constant(y_doa, dtype=tf.float32)
+            y_sed = tf.constant(y_sed, dtype=tf.float64)
+            y_doa = tf.constant(y_doa, dtype=tf.float64)
 
             train_loss_sed, train_loss_doa, train_loss_total, train_loss_total_l2 = train_step(step= step, params=params, LR= applied_LR,
                                                                                                x_mel=x_mel, y_sed=y_sed, y_doa=y_doa)
@@ -339,8 +339,8 @@ manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=1)
 #train_loop(params, scheduler)
 
 x_mel, y_sed, y_doa = data_gen_train.next_batch(params['batch_size'])
-y_sed = tf.constant(y_sed, dtype=tf.float32)
-y_doa = tf.constant(y_doa, dtype=tf.float32)
+y_sed = tf.constant(y_sed, dtype=tf.float64)
+y_doa = tf.constant(y_doa, dtype=tf.float64)
 print(x_mel.shape)
 print(y_doa.shape)
 print(y_sed.shape)

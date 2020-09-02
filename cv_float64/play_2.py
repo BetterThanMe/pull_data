@@ -201,7 +201,7 @@ class SelfAttention(tf.keras.layers.Layer):
         v = self.V(inputs)
         self.attention = tf.matmul(q,k,transpose_b=True)
         if self.scaled:
-            d_k = tf.cast(k.shape[-1], dtype = tf.float32)
+            d_k = tf.cast(k.shape[-1], dtype = tf.float64)
             self.attention = tf.divide(self.attention, tf.sqrt(d_k))
         if self.masked:
             raise  NotImplementedError
@@ -448,8 +448,8 @@ params = get_params()
 layer = SELDnet(params=params, is_training=True, out_shape_sed=(60,14), out_shape_doa=(60,42))
 
 y = np.load(path_label)
-y_sed = tf.constant(y[:, :14], dtype=tf.float32)
-y_doa = tf.constant(y[:, 14:], dtype=tf.float32)
+y_sed = tf.constant(y[:, :14], dtype=tf.float64)
+y_doa = tf.constant(y[:, 14:], dtype=tf.float64)
 print(y_sed.shape,' ', y_doa.shape)
 
 pred_sed, pred_doa = layer(x, training = False)
