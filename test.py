@@ -345,5 +345,6 @@ print(x_mel.shape)
 print(y_doa.shape)
 print(y_sed.shape)
 
-train_step(params, x_mel, y_sed, y_doa, 2e-5)
+#train_step(params, x_mel, y_sed, y_doa, 2e-5)
+
 

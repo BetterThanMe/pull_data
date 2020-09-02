@@ -437,7 +437,7 @@ class SELDnet(tf.keras.Model):
         x_doa = self.doa(x, training= self.is_training)
         return x_sed, x_doa
 
-from parameter import *
+'''from parameter import *
 path = '/home/ad/PycharmProjects/Sound_processing/venv/pull_data/feat_label/foa_dev/fold1_room1_mix007_ov1.npy'
 path_label = '/home/ad/PycharmProjects/Sound_processing/venv/pull_data/feat_label/foa_dev_label/fold1_room1_mix007_ov1.npy'
 
@@ -464,4 +464,4 @@ grads = tape.gradient(loss, layer.trainable_variables)
 for var in tape.watched_variables():
     print(var.name)
 print(loss)
-
+'''
