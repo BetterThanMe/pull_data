@@ -208,22 +208,6 @@ class SelfAttention(tf.keras.layers.Layer):
         self.attention = tf.nn.softmax(self.attention, axis= -1)
         return tf.matmul(self.attention, v)
 
-#3, 3, 64, 1, 1, is_training=self.istraining, padding='SAME', name='conv1'
-import os
-import numpy as np
-'''
-x = tf.constant(x, shape=[10, 300, 448])
-
-x = tf.random.normal(shape=[32, 5, 10])
-layer = SelfAttention(64)
-print(layer(x).shape)
-with tf.GradientTape(persistent=True) as tape:
-    loss = layer(x)
-    grads = tape.gradient(loss, layer.trainable_variables)
-for var in tape.watched_variables():
-    print(var.name)
-print(len(grads))'''
-
 class CRNN(tf.keras.layers.Layer):
     def __init__(self, is_training, params, name, out_shape_sed, out_shape_doa,
                  dropout_keep_prob_cnn=None, dropout_keep_prob_rnn=None, dropout_keep_prob_dnn=None, *args, **kwargs):
@@ -440,32 +424,105 @@ class SELDnet(tf.keras.Model):
         x_doa = self.doa(x, training= self.is_training)
         return x_sed, x_doa
 
-'''from parameter import *
-path = '/home/ad/PycharmProjects/Sound_processing/venv/pull_data/feat_label/foa_dev/fold1_room1_mix007_ov1.npy'
-path_label = '/home/ad/PycharmProjects/Sound_processing/venv/pull_data/feat_label/foa_dev_label/fold1_room1_mix007_ov1.npy'
+#-----------------------------------------------------------------------------------------------------------------
+class SeldNet:
+    @staticmethod
+    def build_SED_branch(inputs, params, out_shape_sed):
+        drop = tf.keras.layers.Dropout(params['dropout_keep_prob_dnn'])
+        x = inputs
+        x = Fc(params['dnn_size'])(x)
+        x = drop(x)
+        x = Fc(params['dnn_size'])(x)
+        x = drop(x)
+        x = Fc(out_shape_sed[-1])(x)
+        x = tf.sigmoid(x)
+        x = tf.reshape(x, [-1, out_shape_sed[0], out_shape_sed[1]], name='output_sed')
+        return x
+    @staticmethod
+    def build_DOA_branch(inputs, params, out_shape_doa):
+        drop = tf.keras.layers.Dropout(params['dropout_keep_prob_dnn'])
+        x = inputs
+        x = Fc(params['dnn_size'])(x)
+        x = drop(x)
+        x = Fc(params['dnn_size'])(x)
+        x = drop(x)
+        x = Fc(out_shape_doa[-1])(x)
+        x = tf.tanh(x)
+        x = tf.reshape(x, [-1, out_shape_doa[0], out_shape_doa[1]], name='output_doa')
+        return x
 
-x = np.load(path)
-x = tf.reshape(x, (-1, 300, 64, 7))
-params = get_params()
-#layer = CRNN(is_training=True, params=params, name= 'crnn', out_shape_sed=(60, 14), out_shape_doa=(60, 42))
-layer = SELDnet(params=params, is_training=True, out_shape_sed=(60,14), out_shape_doa=(60,42))
+    @staticmethod
+    def build(params, out_shape_sed, out_shape_doa, seq_length):
+            dropout_keep_prob_cnn = params['dropout_keep_prob_cnn']
+            dropout_keep_prob_rnn = params['dropout_keep_prob_rnn']
+            dropout_keep_prob_dnn = params['dropout_keep_prob_dnn']
+            drop = tf.keras.layers.Dropout(dropout_keep_prob_cnn)
+            # (-1, 300, 64, 7)
+            inputs_shape = (seq_length, params['nb_mel_bins'], 7)
+            inputs = tf.keras.Input(inputs_shape)
 
-y = np.load(path_label)
-y_sed = tf.constant(y[:, :14], dtype=tf.float32)
-y_doa = tf.constant(y[:, 14:], dtype=tf.float32)
-print(y_sed.shape,' ', y_doa.shape)
+            x = Conv_bn_relu(filter_height=3, filter_width=3, num_filters=64, stride_y=1, stride_x=1,
+                                      name='conv1', padding='SAME')(inputs)
+            # (-1, 300, 64, 64)
 
-pred_sed, pred_doa = layer(x, training = False)
-l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in layer.trainable_variables])
-losses = Loss()
+            x = Conv_bn_relu(filter_height=3, filter_width=3, num_filters=64, stride_y=1, stride_x=1,
+                                      name='conv2', padding='SAME')(x)
+            # (-1, 300, 64, 64)
+            x = Max_pool(filter_height=5, filter_width=2, stride_y=5, stride_x=2, name='max_pool2',
+                                      padding='VALID')(x)
+            # (-1, 60, 32, 64)
+            x = drop(x)
 
-with tf.GradientTape(persistent=True) as tape:
-    pred_sed, pred_doa = layer(x, training=True)
-    loss = losses.total_loss_l2(pred_sed=pred_sed, gt_sed=y_sed, pred_doa=pred_doa,
-                                gt_doa=y_doa, l2_loss=l2_loss, l2_reg_lambda=params['l2_reg_lambda'])
-grads = tape.gradient(loss, layer.trainable_variables)
-for var in tape.watched_variables():
-    print(var.name)
-print(loss)
+            # (-1, 60, 32, 64)
+            x = Conv_bn_relu(filter_height=3, filter_width=3, num_filters=128, stride_y=1, stride_x=1,
+                                     padding='SAME', name='conv3')(x)
+            # (-1, 60, 32, 128)
+            x = Max_pool(filter_height=1, filter_width=2, stride_y=1, stride_x=2, padding='VALID',
+                                      name='max_pool3')(x)
+            # (-1, 60, 16, 128)
+            x = drop(x)
 
-'''
+            # (-1, 60, 16, 128)
+            x = Conv_bn_relu(filter_height=3, filter_width=3, num_filters=128, stride_y=1, stride_x=1,
+                                      padding='SAME', name='conv4')(x)
+            # (-1, 60, 16, 128)
+            x = Max_pool(filter_height=1, filter_width=2, stride_y=1, stride_x=2, padding='VALID',
+                                      name='pool4')(x)
+            # (-1, 60, 8, 128)
+            x = drop(x)
+
+            # (-1, 60, 8, 128)
+            x = Conv_bn_relu(filter_height=3, filter_width=3, num_filters=256, stride_y=1, stride_x=1,
+                                      padding='SAME', name='conv5')(x)
+            # (-1, 60, 8, 256)
+            x = Max_pool(filter_height=1, filter_width=2, stride_y=1, stride_x=2, padding='VALID',
+                                      name='pool5')(x)
+            # (-1, 60, 4, 256)
+            x = drop(x)
+
+            # (-1, 60, 4, 256)
+            x = Conv_bn_relu(filter_height=3, filter_width=3, num_filters=256, stride_y=1, stride_x=1,
+                                      padding='SAME', name='conv6')(x)
+            # (-1, 60, 4, 256)
+            x = Max_pool(filter_height=1, filter_width=2, stride_y=1, stride_x=2, padding='VALID',
+                                      name='pool6')(x)
+            # (-1, 60, 2, 256)
+            x = drop(x)
+
+            x = tf.reshape(x, shape=[-1, out_shape_sed[0], 2 * 256])
+
+            x = Bidirectional(nhidden=params['rnn_hidden_size'], nlayer=params['rnn_nb_layer'],
+                                               input_keep_prob=1., output_keep_prob=dropout_keep_prob_rnn,
+                                               return_sequences=True, name='bidrectional', return_state=False)(x)
+            x = SelfAttention(params['attention_size'])(x)
+
+
+            x_sed = SeldNet.build_SED_branch(inputs=x, params=params, out_shape_sed=out_shape_sed)
+            x_doa = SeldNet.build_DOA_branch(inputs=x, params=params, out_shape_doa=out_shape_doa)
+
+            model = tf.keras.Model(
+                inputs=inputs,
+                outputs=[x_sed, x_doa],
+                name="seld_net")
+
+            return model
