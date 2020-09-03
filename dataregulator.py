@@ -4,7 +4,6 @@ import math
 import time
 import os
 import sys
-sys.path.insert(0, '/home/ad/PycharmProjects/Sound_processing/venv/pull_data/')
 from datagenerator_individual import DataGenerator_Individual
 
 class DataRegulator:
@@ -97,6 +96,7 @@ class DataRegulator:
         y_doa = np.ndarray(np.append([batch_size], self._gen_list[0].get_label_shape_doa()))
 
         for i in range(len(data_index)):
+            x_mel[i],  y_sed[i], y_doa[i] = self._gen_list[data_index[i]].get_random_sample()
             x_mel[i],  y_sed[i], y_doa[i] = self._gen_list[data_index[i]].get_random_sample()
 
         # Get next batch of image (path) and labels
