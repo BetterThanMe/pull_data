@@ -104,12 +104,12 @@ elif params['mode'] == 'eval':
 
 iseval = (params['mode'] == 'eval')
 
-'''data_gen_train = DataRegulator(train_splits,
+data_gen_train = DataRegulator(train_splits,
                                params['feat_label_dir'] + '{}_dev_label/'.format(params['dataset']),
                                params['feat_label_dir'] + '{}_dev_norm/'.format(params['dataset']),
                                seq_len=seq_len,
-                               seq_hop=5)  # hop len must be factor of 5'''
-'''data_gen_valid = DataRegulator(val_splits,
+                               seq_hop=5)  # hop len must be factor of 5
+data_gen_valid = DataRegulator(val_splits,
                                params['feat_label_dir'] + '{}_dev_label/'.format(params['dataset']),
                                params['feat_label_dir'] + '{}_dev_norm/'.format(params['dataset']),
                                seq_len=seq_len,
@@ -123,9 +123,9 @@ data_gen_test = DataRegulator(test_splits,
                               iseval=iseval)
 
 data_gen_test.load_data()
-data_gen_valid.load_data()'''
-#data_gen_train.load_data()
-#data_gen_train.shuffle_data()
+data_gen_valid.load_data()
+data_gen_train.load_data()
+data_gen_train.shuffle_data()
 
 best_valid_seld_metric = np.inf
 early_stop_count = 0
@@ -235,7 +235,12 @@ def train_step(params, step, x_mel, y_sed, y_doa, LR):
     optimizer = tf.keras.optimizers.Adam(learning_rate=LR)
 
     if FLAGS.augment == 1:
-        x_mel = tf.constant(augment_spec(x_mel), dtype=tf.float32)
+        x_mel = tf.constant(augment_spec(x_mel.numpy()), dtype=tf.float32)
+    else:
+        x_mel = tf.dtypes.cast(x_mel, tf.float32)
+
+    y_sed = tf.dtypes.cast(y_sed, tf.float32)
+    y_doa = tf.dtypes.cast(y_doa, tf.float32)
 
     with tf.GradientTape(persistent=True) as tape:
         pred_sed, pred_doa = model(x_mel, training=True)
@@ -246,28 +251,27 @@ def train_step(params, step, x_mel, y_sed, y_doa, LR):
     grads = tape.gradient(train_loss_total_l2, model.trainable_variables)
     optimizer.apply_gradients(zip(grads, model.trainable_variables))
     time_str = datetime.now().isoformat()
-    print("{}:loss SED {} DOA {} OUTPUT {} TOTAL {}".format(time_str, train_loss_sed, train_loss_doa,
+    print("{}: At step {} ~ loss SED {} DOA {} OUTPUT {} TOTAL {}".format(time_str, step, train_loss_sed, train_loss_doa,
                                                                       train_loss_total, train_loss_total_l2))
     return train_loss_sed, train_loss_doa, train_loss_total, train_loss_total_l2
 
-def train_loop(params, scheduler):
+def train_loop(params, scheduler, dataset_train):
     start_time = time.time()
-    train_batches_per_epoch = np.floor(data_gen_train._data_size / params['batch_size']).astypnp.uint32
+    #train_batches_per_epoch = np.floor(data_gen_train._data_size / params['batch_size']).astypnp.uint32
     current_step = 0
     global early_stop_count, best_valid_seld_metric
     for epoch in range(scheduler['training_epoch']):
+        if epoch==20:
+            break
         applied_LR = learning_schedule(epoch)
         print("{} Epoch number: {} learning rate {}".format(datetime.now(), epoch + 1, applied_LR))
 
-        step = 0
-        while step<= train_batches_per_epoch:
-            x_mel, y_sed, y_doa = data_gen_train.next_batch(params['batch_size'])
-            y_sed = tf.constant(y_sed, dtype=tf.float32)
-            y_doa = tf.constant(y_doa, dtype=tf.float32)
+        for step, (x_mel, y_sed, y_doa) in enumerate(dataset_train):
+            train_loss_sed, train_loss_doa,\
+            train_loss_total, train_loss_total_l2 = train_step(step= step, params=params, LR= applied_LR,
+                                                               x_mel=x_mel, y_sed=y_sed, y_doa=y_doa)
 
-            train_loss_sed, train_loss_doa, train_loss_total, train_loss_total_l2 = train_step(step= step, params=params, LR= applied_LR,
-                                                                                               x_mel=x_mel, y_sed=y_sed, y_doa=y_doa)
-            step +=1
+            '''
             current_step +=1
             if current_step % evaluate_every:
                 print("{} Start validation".format(datetime.now()))
@@ -330,7 +334,7 @@ def train_loop(params, scheduler):
     end_time = time.time()
     with open(os.path.join(out_path, "training_time.txt"), "a") as text_file:
         text_file.write("{:g}\n".format((end_time - start_time)))
-
+'''
 
 #model = SELDnet(params=params, is_training=True, out_shape_sed=(120,14), out_shape_doa=(120,42))
 #ckpt = tf.train.Checkpoint(step = tf.Variable(0), net=model)
@@ -343,7 +347,7 @@ y_doa = tf.constant(y_doa, dtype=tf.float32)
 print(x_mel.shape)
 print(y_doa.shape)
 print(y_sed.shape)
-'''
+
 feat_path='/home/ad/PycharmProjects/Sound_processing/venv/pull_data/feat_label/foa_dev_norm/fold1_room1_mix007_ov1.npy'
 label_path='/home/ad/PycharmProjects/Sound_processing/venv/pull_data/feat_label/foa_dev_label/fold1_room1_mix007_ov1.npy'
 
@@ -357,10 +361,12 @@ y_doa = tf.constant(y[:,14:], dtype=tf.float32)
 print(x_mel.shape)
 print(y_sed.shape)
 print(y_doa.shape)
+'''
 model = SeldNet.build(params=params, out_shape_sed=(120,14), out_shape_doa=(120,42), seq_length=600)
+model.summary()
 
-out = model(x_mel, training=False)
-
-for i in out:
-    print(i.shape)
-#model.summary()
+#get dataset_train:
+data_gen_train.reset_pointer()
+actual_len, inputs, label_sed, label_doa = data_gen_train.get_rest_batch()
+dataset_train = tf.data.Dataset.from_tensor_slices((inputs, label_sed, label_doa)).batch(10)
+train_loop(params, scheduler, dataset_train)
