@@ -104,11 +104,11 @@ elif params['mode'] == 'eval':
 
 iseval = (params['mode'] == 'eval')
 
-data_gen_train = DataRegulator(train_splits,
+'''data_gen_train = DataRegulator(train_splits,
                                params['feat_label_dir'] + '{}_dev_label/'.format(params['dataset']),
                                params['feat_label_dir'] + '{}_dev_norm/'.format(params['dataset']),
                                seq_len=seq_len,
-                               seq_hop=5)  # hop len must be factor of 5
+                               seq_hop=5)  # hop len must be factor of 5'''
 '''data_gen_valid = DataRegulator(val_splits,
                                params['feat_label_dir'] + '{}_dev_label/'.format(params['dataset']),
                                params['feat_label_dir'] + '{}_dev_norm/'.format(params['dataset']),
@@ -124,8 +124,8 @@ data_gen_test = DataRegulator(test_splits,
 
 data_gen_test.load_data()
 data_gen_valid.load_data()'''
-data_gen_train.load_data()
-data_gen_train.shuffle_data()
+#data_gen_train.load_data()
+#data_gen_train.shuffle_data()
 
 best_valid_seld_metric = np.inf
 early_stop_count = 0
@@ -332,18 +332,35 @@ def train_loop(params, scheduler):
         text_file.write("{:g}\n".format((end_time - start_time)))
 
 
-model = SELDnet(params=params, is_training=True, out_shape_sed=(120,14),
-                out_shape_doa=(120,42))
-ckpt = tf.train.Checkpoint(step = tf.Variable(0), net=model)
-manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=1)
+#model = SELDnet(params=params, is_training=True, out_shape_sed=(120,14), out_shape_doa=(120,42))
+#ckpt = tf.train.Checkpoint(step = tf.Variable(0), net=model)
+#manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=1)
 #train_loop(params, scheduler)
 
-x_mel, y_sed, y_doa = data_gen_train.next_batch(params['batch_size'])
+'''x_mel, y_sed, y_doa = data_gen_train.next_batch(params['batch_size'])
 y_sed = tf.constant(y_sed, dtype=tf.float32)
 y_doa = tf.constant(y_doa, dtype=tf.float32)
 print(x_mel.shape)
 print(y_doa.shape)
 print(y_sed.shape)
+'''
+feat_path='/home/ad/PycharmProjects/Sound_processing/venv/pull_data/feat_label/foa_dev_norm/fold1_room1_mix007_ov1.npy'
+label_path='/home/ad/PycharmProjects/Sound_processing/venv/pull_data/feat_label/foa_dev_label/fold1_room1_mix007_ov1.npy'
 
-train_step(params, x_mel, y_sed, y_doa, 2e-5)
+x_mel = np.load(feat_path).reshape((-1, 600, 64, 7))
 
+x_mel = tf.constant(augment_spec(x_mel), dtype=tf.float32)
+y = np.load(label_path)
+y_sed = tf.constant(y[:,:14], dtype=tf.float32)
+y_doa = tf.constant(y[:,14:], dtype=tf.float32)
+
+print(x_mel.shape)
+print(y_sed.shape)
+print(y_doa.shape)
+model = SeldNet.build(params=params, out_shape_sed=(120,14), out_shape_doa=(120,42), seq_length=600)
+
+out = model(x_mel, training=False)
+
+for i in out:
+    print(i.shape)
+#model.summary()
